@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Crystal</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --green-bright: #4AFF4A;
+      --green-hover: #3FDB3F;
+      --green-dark: #2DB22D;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    ::-webkit-scrollbar {
+      display: none;
+    }
+
+    html {
+      background: transparent;
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    body {
+      width: 380px;
+      background: #000a00;
+      margin: 0;
+      padding: 0;
+      border-radius: 12px;
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+      transition: all 0.3s ease;
+      height: 600px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    body.docked {
+      width: 380px;
+      height: 100vh;
+      position: fixed;
+      top: 0;
+      right: 0;
+      border-radius: 12px 0 0 12px;
+    }
+
+    #app {
+      background-color: #000a00;
+      color: #e0e0e0;
+      padding: 1rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+      transition: all 0.3s ease;
+    }
+
+    body.docked #app {
+      height: 100vh;
+    }
+
+    /* Remove any backgrounds from Chrome elements */
+    :host,
+    :root,
+    body > *:not(#app) {
+      background: transparent !important;
+    }
+
+    .rss-icon {
+      width: 20px;
+      height: 20px;
+      fill: var(--green-bright);
+    }
+
+    .action-icon {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+    }
+
+    .card {
+      background-color: #001500;
+      border: 1px solid #002500;
+      border-radius: 0.5rem;
+      transition: all 0.2s ease;
+    }
+
+    .card:hover {
+      background-color: #002000;
+      border-color: var(--green-dark);
+    }
+
+    .button {
+      background-color: #001500;
+      color: var(--green-bright);
+      border: 1px solid var(--green-bright);
+      border-radius: 0.5rem;
+      transition: all 0.2s ease;
+    }
+
+    .button:hover {
+      background-color: #002500;
+      border-color: var(--green-hover);
+      color: var(--green-hover);
+    }
+
+    .button-danger {
+      background-color: #001500;
+      color: var(--green-bright);
+      border: 1px solid var(--green-bright);
+      border-radius: 0.5rem;
+      transition: all 0.2s ease;
+    }
+
+    .button-danger:hover {
+      background-color: #002500;
+      border-color: var(--green-hover);
+      color: var(--green-hover);
+    }
+
+    .modal {
+      background-color: #001500;
+      border: 1px solid var(--green-dark);
+      border-radius: 1.5rem;
+      box-shadow: 0 0 20px rgba(74, 255, 74, 0.1);
+      width: 320px;
+      position: relative;
+      z-index: 51;
+    }
+
+    /* Add styles for modal containers */
+    #addFeedModal,
+    #addTopicModal {
+      position: fixed;
+      inset: 0;
+      background-color: rgba(0, 0, 0, 0.9);
+      backdrop-filter: blur(4px);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 32px;
+      z-index: 50;
+    }
+
+    #addFeedModal.flex,
+    #addTopicModal.flex {
+      display: flex;
+    }
+
+    /* Update input styles */
+    .input {
+      background-color: #000a00;
+      border: 1px solid #002500;
+      color: #e0e0e0;
+      border-radius: 0.5rem;
+    }
+
+    .input:focus {
+      border-color: var(--green-bright);
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(74, 255, 74, 0.2);
+    }
+
+    .section-title {
+      color: var(--green-bright);
+      font-weight: 600;
+      font-size: 1.1rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .empty-state {
+      background-color: #001500;
+      border: 1px dashed var(--green-dark);
+      color: #9ca3af;
+      border-radius: 0.5rem;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .link-text {
+      color: var(--green-bright);
+    }
+
+    .link-text:hover {
+      color: var(--green-hover);
+    }
+
+    .badge {
+      background-color: var(--green-dark);
+      color: var(--green-bright);
+    }
+
+    /* Content sections */
+    #app > div:not(.flex) {
+      margin-bottom: 1.5rem;
+    }
+
+    #app > div:last-child {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #matchesList {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    #matchesList .space-y-2 {
+      padding-bottom: 1rem;
+    }
+
+    .match-title {
+      font-size: 0.9375rem;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-height: 3.1rem;
+    }
+
+    .match-feed {
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center space-x-3">
+        <img src="icons/header32.png" alt="Crystal" class="rss-icon" />
+        <h1 class="text-xl font-bold" style="color: var(--green-bright)">Crystal</h1>
+      </div>
+      <div class="flex items-center space-x-2">
+        <button id="refreshFeeds" class="button p-1.5 rounded-lg flex items-center justify-center group relative hidden" title="Check Feeds Now">
+          <svg class="action-icon w-4 h-4" viewBox="0 0 24 24">
+            <path d="M4 12 A 8 8 0 1 0 12 4" stroke="currentColor" stroke-width="2" fill="none"/>
+            <path d="M4 12 L 1 9 L 4 6" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+        </button>
+        <button id="toggleDock" class="flex items-center justify-center group relative" title="Open Side Panel">
+          <svg class="w-5 h-5" viewBox="0 0 24 24">
+            <rect x="3" y="4" width="18" height="16" rx="2" stroke="var(--green-bright)" stroke-width="2" fill="none"/>
+            <path d="M16 4v16" stroke="var(--green-bright)" stroke-width="2"/>
+            <path d="M8 9h2M8 12h2M8 15h2" stroke="var(--green-bright)" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Feeds Section -->
+    <div class="mb-6">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="section-title mb-0">Feeds</h2>
+        <button id="addFeed" class="button w-4 h-4 flex items-center justify-center rounded-lg" title="Add Feed">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m-6-6h12"/>
+          </svg>
+        </button>
+      </div>
+      <div id="feedsList" class="space-y-2">
+        <!-- Feeds will be inserted here -->
+      </div>
+    </div>
+
+    <!-- Topics Section -->
+    <div class="mb-6">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="section-title mb-0">Search Topics</h2>
+        <button id="addTopic" class="button w-4 h-4 flex items-center justify-center rounded-lg" title="Add Search Topic">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v12m-6-6h12"/>
+          </svg>
+        </button>
+      </div>
+      <div id="topicsList" class="space-y-2">
+        <!-- Topics will be inserted here -->
+      </div>
+    </div>
+
+    <!-- Recent Matches -->
+    <div>
+      <h2 class="section-title">Recent Matches</h2>
+      <div id="matchesList" class="space-y-2">
+        <!-- Matches will be inserted here -->
+      </div>
+    </div>
+
+    <!-- Add Feed Modal -->
+    <div id="addFeedModal" class="hidden">
+      <div class="modal p-6">
+        <h3 class="text-lg font-semibold mb-4" style="color: var(--green-bright)">Add RSS Feed</h3>
+        <form id="addFeedForm">
+          <div class="mb-4">
+            <label class="block text-sm font-medium mb-1 text-gray-300">Feed Name</label>
+            <input type="text" name="name" class="input w-full px-3 py-2" required>
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm font-medium mb-1 text-gray-300">Feed URL</label>
+            <input type="url" name="url" class="input w-full px-3 py-2" required>
+          </div>
+          <div class="flex justify-end space-x-2">
+            <button type="button" id="cancelAddFeed" class="px-3 py-2 rounded-lg border border-gray-600 text-gray-300 hover:bg-gray-700">
+              Cancel
+            </button>
+            <button type="submit" class="button px-3 py-2 rounded-lg">
+              Add
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Add Topic Modal -->
+    <div id="addTopicModal" class="hidden">
+      <div class="modal p-6">
+        <h3 class="text-lg font-semibold mb-4" style="color: var(--green-bright)">Add Search Topic</h3>
+        <form id="addTopicForm">
+          <div class="mb-4">
+            <label class="block text-sm font-medium mb-1 text-gray-300">Search Query</label>
+            <input type="text" name="query" class="input w-full px-3 py-2" required>
+          </div>
+          <div class="mb-4">
+            <label class="flex items-center">
+              <input type="checkbox" name="caseSensitive" class="mr-2 bg-gray-700 border-gray-600">
+              <span class="text-sm text-gray-300">Case Sensitive</span>
+            </label>
+          </div>
+          <div class="flex justify-end space-x-2">
+            <button type="button" id="cancelAddTopic" class="px-3 py-2 rounded-lg border border-gray-600 text-gray-300 hover:bg-gray-700">
+              Cancel
+            </button>
+            <button type="submit" class="button px-3 py-2 rounded-lg">
+              Add
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html> 

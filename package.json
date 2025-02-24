@@ -1,0 +1,45 @@
+{
+  "name": "my-maiar-agent",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "pnpm build && pnpm start",
+    "build:extension": "node scripts/generate-icons.js && webpack --config webpack.extension.config.js",
+    "watch:extension": "webpack --config webpack.extension.config.js --watch",
+    "generate-icons": "node scripts/generate-icons.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.4.1",
+  "dependencies": {
+    "@maiar-ai/core": "^0.9.0",
+    "@maiar-ai/memory-sqlite": "^0.9.0",
+    "@maiar-ai/model-openai": "^0.9.0",
+    "@maiar-ai/plugin-terminal": "^0.9.0",
+    "@maiar-ai/plugin-text": "^0.9.0",
+    "@maiar-ai/plugin-time": "^0.9.0",
+    "dotenv": "^16.4.7",
+    "rss-parser": "^3.13.0",
+    "zod": "^3.22.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "sharp"
+    ]
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.260",
+    "@types/node": "^20.11.19",
+    "copy-webpack-plugin": "^12.0.2",
+    "sharp": "^0.33.2",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.7.3",
+    "webpack": "^5.90.3",
+    "webpack-cli": "^5.1.4"
+  }
+}

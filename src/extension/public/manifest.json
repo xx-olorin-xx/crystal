@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Crystal",
+  "version": "1.0.0",
+  "description": "Your crystal ball for the web - monitor RSS feeds and discover insights across the internet",
+  "permissions": [
+    "storage",
+    "notifications",
+    "alarms",
+    "background",
+    "windows",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+} 
