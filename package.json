@@ -19,10 +19,14 @@
     "@maiar-ai/core": "^0.9.0",
     "@maiar-ai/memory-sqlite": "^0.9.0",
     "@maiar-ai/model-openai": "^0.9.0",
+    "@maiar-ai/plugin-express": "^0.9.0",
     "@maiar-ai/plugin-terminal": "^0.9.0",
     "@maiar-ai/plugin-text": "^0.9.0",
     "@maiar-ai/plugin-time": "^0.9.0",
+    "@types/cors": "^2.8.17",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
+    "express": "^4.21.2",
     "rss-parser": "^3.13.0",
     "zod": "^3.22.4"
   },
@@ -34,6 +38,7 @@
   },
   "devDependencies": {
     "@types/chrome": "^0.0.260",
+    "@types/express": "^5.0.0",
     "@types/node": "^20.11.19",
     "copy-webpack-plugin": "^12.0.2",
     "sharp": "^0.33.2",

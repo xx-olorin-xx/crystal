@@ -1,4 +1,7 @@
-import { ExtensionMessage, RSSFeed, SearchTopic, FeedItem } from '../../plugins/rss-monitor/types';
+import { RSSFeed, SearchTopic, FeedItem } from '../../plugins/rss-monitor/types';
+import { ChatClient } from './services/ChatClient';
+
+const API_BASE = 'http://localhost:3000';
 
 interface ExtensionState {
   feeds: RSSFeed[];
@@ -13,6 +16,7 @@ let state: ExtensionState = {
 };
 
 let currentTab = 'recent'; // 'recent' or 'archived'
+let currentView = 'rss-monitor'; // 'rss-monitor' or 'maiar-ai'
 
 // UI Elements
 const addFeedButton = document.getElementById('addFeed')!;
@@ -26,6 +30,9 @@ const addTopicForm = document.getElementById('addTopicForm')! as HTMLFormElement
 const feedsList = document.getElementById('feedsList')!;
 const topicsList = document.getElementById('topicsList')!;
 const matchesList = document.getElementById('matchesList')!;
+const chatMessages = document.getElementById('chatMessages')!;
+const chatInput = document.getElementById('chatInput') as HTMLInputElement;
+const sendChatButton = document.getElementById('sendChat') as HTMLButtonElement;
 
 // Add these type definitions near the top with other interfaces
 interface ChromeWindow {
@@ -44,6 +51,21 @@ interface ChromeWindow {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
+  // Initialize UI elements
+  updateChatMessages();
+
+  // Listen for storage changes
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.rss_feeds || changes.rss_topics) {
+      // Reload state and update UI
+      chrome.runtime.sendMessage({ type: 'GET_STATE' }, (response: ExtensionState) => {
+        console.log('State updated from storage:', response);
+        state = response;
+        renderUI();
+      });
+    }
+  });
+
   // Force hide modals initially with display: none
   addFeedModal.style.display = 'none';
   addTopicModal.style.display = 'none';
@@ -97,21 +119,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Get initial state
-  chrome.runtime.sendMessage({ type: 'GET_STATE' }, (response: ExtensionState) => {
-    console.log('Initial state:', response);
-    state = response;
-    renderUI();
+  // Initialize state and start feed checking
+  await initialize();
+
+  // Setup tab navigation
+  const tabButtons = document.querySelectorAll('.tab-button');
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const view = button.getAttribute('data-view');
+      if (view) {
+        switchView(view);
+      }
+    });
   });
 
-  // Listen for state updates
-  chrome.runtime.onMessage.addListener((message: { type: string; payload: any }) => {
-    if (message.type === 'STATE_UPDATED') {
-      console.log('State updated:', message.payload);
-      state = message.payload;
-      renderUI();
+  // Setup chat functionality
+  chatInput.addEventListener('keypress', async (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      await handleChatSubmit();
     }
   });
+
+  sendChatButton.addEventListener('click', handleChatSubmit);
 
   // Add click handler for matches list
   matchesList.addEventListener('click', (event) => {
@@ -251,11 +281,6 @@ function renderFeeds() {
           </svg>
         </button>
       </div>
-      ${feed.lastChecked ? `
-        <div class="mt-2 text-xs text-gray-500">
-          Last checked: ${new Date(feed.lastChecked).toLocaleString()}
-        </div>
-      ` : ''}
     </div>
   `).join('');
 }
@@ -270,16 +295,15 @@ function renderTopics() {
     return;
   }
 
-  topicsList.innerHTML = state.topics.map(topic => `
+  topicsList.innerHTML = state.topics.map(topic => renderTopic(topic)).join('');
+}
+
+function renderTopic(topic: SearchTopic) {
+  return `
     <div class="card p-3">
       <div class="flex items-center justify-between">
-        <div>
-          <div class="flex items-center">
-            <h3 class="font-medium text-gray-200">${topic.query}</h3>
-            ${topic.caseSensitive ? `
-              <span class="ml-2 text-xs badge px-2 py-0.5 rounded">Case Sensitive</span>
-            ` : ''}
-          </div>
+        <div class="flex-1">
+          <div class="text-sm font-medium text-gray-200">${topic.query}</div>
         </div>
         <button
           class="button w-4 h-4 flex items-center justify-center rounded-full ml-2"
@@ -292,25 +316,19 @@ function renderTopics() {
         </button>
       </div>
     </div>
-  `).join('');
+  `;
 }
 
 function renderMatches() {
-  // Always render the tab buttons
+  // Always render the tab buttons (now just the Recent tab)
   const tabButtons = `
     <div class="flex items-center justify-between mb-4">
       <div class="flex space-x-2">
         <button 
-          class="tab-button px-3 py-1 rounded-lg text-sm ${currentTab === 'recent' ? 'button' : 'text-gray-400 hover:text-gray-300'}"
+          class="tab-button px-3 py-1 rounded-lg text-sm button"
           data-tab="recent"
         >
           Recent
-        </button>
-        <button 
-          class="tab-button px-3 py-1 rounded-lg text-sm ${currentTab === 'archived' ? 'button' : 'text-gray-400 hover:text-gray-300'}"
-          data-tab="archived"
-        >
-          Archived
         </button>
       </div>
     </div>
@@ -320,23 +338,19 @@ function renderMatches() {
     matchesList.innerHTML = `
       ${tabButtons}
       <div class="empty-state">
-        No ${currentTab === 'recent' ? '' : 'archived '}matches found yet.
-        ${currentTab === 'recent' ? 'Matches will appear here when found.' : ''}
+        No matches found yet. Matches will appear here when found.
       </div>
     `;
     return;
   }
 
-  const matches = state.recentMatches.filter(m => 
-    currentTab === 'archived' ? m.archived : !m.archived
-  );
+  const matches = state.recentMatches.filter(m => !m.archived);
 
   if (matches.length === 0) {
     matchesList.innerHTML = `
       ${tabButtons}
       <div class="empty-state">
-        No ${currentTab === 'recent' ? '' : 'archived '}matches found yet.
-        ${currentTab === 'recent' ? 'Matches will appear here when found.' : ''}
+        No matches found yet. Matches will appear here when found.
       </div>
     `;
     return;
@@ -367,14 +381,11 @@ function renderMatches() {
                 <button
                   class="button w-4 h-4 flex items-center justify-center rounded-full match-action-button"
                   data-match-id="${match.id}"
-                  data-action="${currentTab === 'recent' ? 'archive' : 'restore'}"
-                  title="${currentTab === 'recent' ? 'Archive' : 'Restore'} Match"
+                  data-action="archive"
+                  title="Archive Match"
                 >
                   <svg class="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    ${currentTab === 'recent' 
-                      ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>'
-                      : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>'
-                    }
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                   </svg>
                 </button>
               </div>
@@ -384,15 +395,6 @@ function renderMatches() {
       }).join('')}
     </div>
   `;
-
-  // Add event listeners for tab buttons
-  const tabButtonElements = matchesList.querySelectorAll('.tab-button');
-  tabButtonElements.forEach(button => {
-    button.addEventListener('click', (event) => {
-      const tab = (event.currentTarget as HTMLButtonElement).dataset.tab as 'recent' | 'archived';
-      switchTab(tab);
-    });
-  });
 
   // Add event listeners for match action buttons
   const actionButtons = matchesList.querySelectorAll('.match-action-button');
@@ -404,8 +406,6 @@ function renderMatches() {
       
       if (matchId && action === 'archive') {
         archiveMatch(matchId);
-      } else if (matchId && action === 'restore') {
-        restoreMatch(matchId);
       }
     });
   });
@@ -458,154 +458,86 @@ function restoreMatch(matchId: string) {
 let currentClearErrorFunction: (() => void) | null = null;
 let currentTopicClearErrorFunction: (() => void) | null = null;
 
+function showError(message: string) {
+  // TODO: Implement error toast/notification
+  console.error(message);
+}
+
+function showSuccess(message: string) {
+  // TODO: Implement success toast/notification
+  console.log(message);
+}
+
 async function handleAddFeed(event: Event) {
   event.preventDefault();
-  const formData = new FormData(event.target as HTMLFormElement);
-  
-  const url = formData.get('url') as string;
+  const form = event.target as HTMLFormElement;
+  const formData = new FormData(form);
   const name = formData.get('name') as string;
+  const url = formData.get('url') as string;
 
-  // Check if URL already exists
-  const existingFeed = state.feeds.find(f => f.url === url);
-  if (existingFeed) {
-    const urlInput = addFeedForm.querySelector('input[name="url"]') as HTMLInputElement;
-    urlInput.setCustomValidity('This RSS URL is already being monitored.');
-    urlInput.reportValidity();
+  try {
+    const response = await fetch(`${API_BASE}/api/feeds`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name,
+        url
+      })
+    });
 
-    // Add error styling
-    urlInput.classList.add('border-red-500');
-    
-    // Add error message
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'text-red-500 text-sm mt-1';
-    errorDiv.textContent = 'This RSS URL is already being monitored.';
-    
-    // Remove any existing error message
-    const existingError = urlInput.parentElement?.querySelector('.text-red-500');
-    if (existingError) {
-      existingError.remove();
+    if (!response.ok) {
+      throw new Error('Failed to add feed');
     }
-    
-    urlInput.parentElement?.appendChild(errorDiv);
 
-    // Clear error when input changes
-    const clearError = () => {
-      urlInput.setCustomValidity('');
-      urlInput.classList.remove('border-red-500');
-      const errorMessage = urlInput.parentElement?.querySelector('.text-red-500');
-      if (errorMessage) {
-        errorMessage.remove();
-      }
-    };
-
-    // Store the current clear error function
-    if (currentClearErrorFunction) {
-      urlInput.removeEventListener('input', currentClearErrorFunction);
-    }
-    currentClearErrorFunction = clearError;
-    urlInput.addEventListener('input', clearError);
-    return;
+    const feed = await response.json();
+    state.feeds.push(feed);
+    renderFeeds();
+    form.reset();
+    showSuccess('Feed added successfully');
+  } catch (error) {
+    console.error('Error adding feed:', error);
+    showError('Failed to add feed');
   }
-
-  const feed: RSSFeed = {
-    id: crypto.randomUUID(),
-    name,
-    url
-  };
-
-  chrome.runtime.sendMessage({
-    type: 'NEW_FEED',
-    payload: feed
-  }, (updatedState: ExtensionState) => {
-    if (chrome.runtime.lastError) {
-      console.error('Error adding feed:', chrome.runtime.lastError);
-      return;
-    }
-    console.log('Feed added, updated state:', updatedState);
-    state = updatedState;
-    renderUI();
-    addFeedModal.style.display = 'none';
-    addFeedModal.classList.add('hidden');
-    addFeedForm.reset();
-  });
 }
 
 async function handleAddTopic(event: Event) {
   event.preventDefault();
-  const formData = new FormData(event.target as HTMLFormElement);
-  
+  const form = event.target as HTMLFormElement;
+  const formData = new FormData(form);
   const query = formData.get('query') as string;
-  const caseSensitive = formData.get('caseSensitive') === 'on';
 
-  // Check if topic already exists
-  const existingTopic = state.topics.find(t => 
-    t.query.toLowerCase() === query.toLowerCase() && 
-    t.caseSensitive === caseSensitive
-  );
-
-  if (existingTopic) {
-    const queryInput = addTopicForm.querySelector('input[name="query"]') as HTMLInputElement;
-    queryInput.setCustomValidity('This search topic already exists.');
-    queryInput.reportValidity();
-
-    // Add error styling
-    queryInput.classList.add('border-red-500');
-    
-    // Add error message
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'text-red-500 text-sm mt-1';
-    errorDiv.textContent = 'This search topic already exists.';
-    
-    // Remove any existing error message
-    const existingError = queryInput.parentElement?.querySelector('.text-red-500');
-    if (existingError) {
-      existingError.remove();
-    }
-    
-    queryInput.parentElement?.appendChild(errorDiv);
-
-    // Clear error when input changes
-    const clearError = () => {
-      queryInput.setCustomValidity('');
-      queryInput.classList.remove('border-red-500');
-      const errorMessage = queryInput.parentElement?.querySelector('.text-red-500');
-      if (errorMessage) {
-        errorMessage.remove();
-      }
-    };
-
-    // Store the current clear error function
-    if (currentTopicClearErrorFunction) {
-      queryInput.removeEventListener('input', currentTopicClearErrorFunction);
-    }
-    currentTopicClearErrorFunction = clearError;
-    queryInput.addEventListener('input', clearError);
-    return;
-  }
-
-  const topic: SearchTopic = {
-    id: crypto.randomUUID(),
-    query,
-    caseSensitive,
-    notifyEmail: false,
-    notifyExtension: true
-  };
-
-  chrome.runtime.sendMessage({
-    type: 'NEW_TOPIC',
-    payload: topic
-  }, (updatedState: ExtensionState) => {
-    if (chrome.runtime.lastError) {
-      console.error('Error adding topic:', chrome.runtime.lastError);
+  try {
+    const existingTopic = state.topics.find(t => t.query === query);
+    if (existingTopic) {
+      showError('A topic with this query already exists');
       return;
     }
-    console.log('Topic added, updated state:', updatedState);
-    state = updatedState;
-    renderUI();
-    addTopicModal.style.display = 'none';
-    addTopicModal.classList.add('hidden');
-    addTopicForm.reset();
-  });
+
+    const response = await fetch(`${API_BASE}/api/topics`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        query
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to add topic');
+    }
+
+    const topic = await response.json();
+    state.topics.push(topic);
+    renderTopics();
+    form.reset();
+    showSuccess('Topic added successfully');
+  } catch (error) {
+    console.error('Error adding topic:', error);
+    showError('Failed to add topic');
+  }
 }
 
 // Helper Functions
@@ -709,6 +641,206 @@ function updateDockIcon(isDocked: boolean) {
     toggleDockButton.title = "Open as Side Panel";
   }
 }
+
+// Handle chat submission
+async function handleChatSubmit() {
+  const content = chatInput.value.trim();
+  if (!content) return;
+
+  try {
+    // Clear input and disable it during processing
+    chatInput.value = '';
+    chatInput.disabled = true;
+    sendChatButton.disabled = true;
+
+    // Add loading state
+    const loadingMessage = document.createElement('div');
+    loadingMessage.className = 'message system';
+    loadingMessage.innerHTML = '<p>Processing your message...</p>';
+    chatMessages.appendChild(loadingMessage);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    // Send message using ChatClient
+    await ChatClient.getInstance().sendMessage(content);
+
+    // Update messages display
+    updateChatMessages();
+  } catch (error) {
+    console.error('Error sending message:', error);
+    // Show error in UI
+    const errorMessage = document.createElement('div');
+    errorMessage.className = 'message system error';
+    errorMessage.innerHTML = '<p>Failed to send message. Please try again.</p>';
+    chatMessages.appendChild(errorMessage);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  } finally {
+    // Re-enable input
+    chatInput.disabled = false;
+    sendChatButton.disabled = false;
+    chatInput.focus();
+  }
+}
+
+// Update chat messages display
+function updateChatMessages() {
+  const messages = ChatClient.getInstance().getRecentMessages();
+  
+  if (messages.length === 0) {
+    chatMessages.innerHTML = `
+      <div class="message system">
+        <p>Welcome! How can I help you today?</p>
+      </div>
+    `;
+    return;
+  }
+
+  chatMessages.innerHTML = messages.map(message => {
+    let html = `
+      <div class="message ${message.role}">
+        <div class="message-content">${message.content}</div>
+        <div class="message-time">${new Date(message.timestamp).toLocaleTimeString()}</div>
+    `;
+
+    if (message.data && Array.isArray(message.data)) {
+      html += `
+        <div class="chat-matches">
+          ${message.data.map(item => `
+            <div class="card p-3">
+              <div class="match-title font-medium text-gray-200">${item.title}</div>
+              <div class="match-feed mt-1">${item.feedName}</div>
+              <div class="flex items-center justify-between mt-2">
+                <a href="${item.link}" target="_blank" class="link-text text-sm inline-flex items-center group">
+                  Read Article
+                  <svg class="w-4 h-4 ml-1 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                  </svg>
+                </a>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    html += '</div>';
+    return html;
+  }).join('');
+
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// View Functions
+function switchView(view: string) {
+  currentView = view;
+  
+  // Update tab buttons
+  const tabButtons = document.querySelectorAll('.tab-button');
+  tabButtons.forEach(button => {
+    if (button.getAttribute('data-view') === view) {
+      button.classList.add('active');
+    } else {
+      button.classList.remove('active');
+    }
+  });
+
+  // Update views
+  const views = document.querySelectorAll('.view');
+  views.forEach(viewElement => {
+    if (viewElement.id === view) {
+      viewElement.classList.add('active');
+    } else {
+      viewElement.classList.remove('active');
+    }
+  });
+
+  // Update chat messages if switching to MAIAR AI view
+  if (view === 'maiar-ai') {
+    updateChatMessages();
+  }
+}
+
+// Refresh all RSS data from API
+async function refreshRSSData() {
+  try {
+    // Fetch feeds
+    const feedsResponse = await fetch(`${API_BASE}/rss/feeds`);
+    if (!feedsResponse.ok) throw new Error('Failed to fetch feeds');
+    const feeds = await feedsResponse.json();
+    state.feeds = Array.isArray(feeds) ? feeds : [];
+    console.log('Fetched feeds:', state.feeds);
+
+    // Fetch topics
+    const topicsResponse = await fetch(`${API_BASE}/rss/topics`);
+    if (!topicsResponse.ok) throw new Error('Failed to fetch topics');
+    const topics = await topicsResponse.json();
+    console.log('Raw topics from API:', topics);
+
+    // Ensure topics are properly structured
+    state.topics = Array.isArray(topics) ? topics.map(topic => {
+      // Log each topic as we process it
+      console.log('Processing topic:', topic);
+      
+      return {
+        id: String(topic.id || ''),
+        query: String(topic.query || ''),
+        caseSensitive: Boolean(topic.caseSensitive),
+        notifyEmail: Boolean(topic.notifyEmail ?? false),
+        notifyExtension: Boolean(topic.notifyExtension ?? true)
+      };
+    }) : [];
+    
+    console.log('Processed topics:', state.topics);
+
+    // Update UI
+    renderUI();
+  } catch (error) {
+    console.error('Error refreshing RSS data:', error);
+  }
+}
+
+// Initialize state and start feed checking
+async function initialize() {
+  console.group('Initializing Extension');
+  try {
+    // Load initial state from API
+    await refreshRSSData();
+  } catch (error) {
+    console.error('Error during initialization:', error);
+  }
+  console.groupEnd();
+}
+
+// Get initial state
+chrome.runtime.sendMessage({ type: 'GET_STATE' }, (response: ExtensionState) => {
+  console.log('Initial state:', response);
+  state = response;
+  renderUI();
+});
+
+// Listen for state updates
+chrome.runtime.onMessage.addListener((message: { type: string; payload: any }) => {
+  if (message.type === 'STATE_UPDATED') {
+    console.log('State update received:', message.payload);
+    
+    // Ensure topics are properly structured
+    if (message.payload.topics) {
+      state.topics = message.payload.topics.map((topic: any) => ({
+        id: String(topic.id || ''),
+        query: String(topic.query || ''),
+        caseSensitive: Boolean(topic.caseSensitive),
+        notifyEmail: Boolean(topic.notifyEmail ?? false),
+        notifyExtension: Boolean(topic.notifyExtension ?? true)
+      }));
+      console.log('Processed topics after state update:', state.topics);
+    }
+
+    // Update other state properties
+    state.feeds = message.payload.feeds || [];
+    state.recentMatches = message.payload.recentMatches || [];
+    
+    renderUI();
+  }
+});
 
 declare global {
   interface Window {

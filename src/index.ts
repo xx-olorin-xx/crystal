@@ -5,8 +5,10 @@ import { OpenAIProvider } from "@maiar-ai/model-openai";
 import { PluginTerminal } from "@maiar-ai/plugin-terminal";
 import { PluginTextGeneration } from "@maiar-ai/plugin-text";
 import { PluginTime } from "@maiar-ai/plugin-time";
+import { PluginExpress } from "@maiar-ai/plugin-express";
 import path from "path";
-
+import router from "./app";
+import { PluginRSS } from "./plugins/rss-monitor";
 // Create and start the agent
 const runtime = createRuntime({
   model: new OpenAIProvider({
@@ -22,7 +24,12 @@ const runtime = createRuntime({
     new PluginTerminal({
       user: "test",
       agentName: "maiar-starter"
-    })
+    }),
+    new PluginExpress({
+      port: 3000,
+      router: router
+    }),
+    new PluginRSS()
   ]
 });
 

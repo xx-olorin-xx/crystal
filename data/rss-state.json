@@ -1,0 +1,87 @@
+{
+  "feeds": {
+    "c8079b57-0453-4701-b2cb-2ec2ccdad13c": {
+      "id": "c8079b57-0453-4701-b2cb-2ec2ccdad13c",
+      "name": "Fox News",
+      "url": "https://moxie.foxnews.com/google-publisher/latest.xml"
+    },
+    "a5a87280-4024-417d-8cb2-8d5f105a1021": {
+      "id": "a5a87280-4024-417d-8cb2-8d5f105a1021",
+      "name": "The Best of Reason",
+      "url": "https://reason.com/podcasts/the-best-of-reason-magazine/feed/"
+    }
+  },
+  "topics": {
+    "0b9343e4-7137-43aa-8caf-018caa24e30e": {
+      "id": "0b9343e4-7137-43aa-8caf-018caa24e30e",
+      "query": "Elon Musk"
+    },
+    "0dc94a7f-578a-4213-980e-1219587224d9": {
+      "id": "0dc94a7f-578a-4213-980e-1219587224d9",
+      "query": "Add Military to my Topics"
+    }
+  },
+  "recentMatches": [
+    {
+      "id": "a5a87280-4024-417d-8cb2-8d5f105a1021-https://reason.com/?post_type=podcast&p=8311923",
+      "feedId": "a5a87280-4024-417d-8cb2-8d5f105a1021",
+      "title": "The Best of Reason: The Improbable Rise of MAGA-Musk",
+      "description": "Is Elon Musk a reactionary with a defective bullshit meter or the best part of the second Trump administration?",
+      "link": "https://reason.com/podcast/2025/01/07/the-best-of-reason-the-improbable-rise-of-maga-musk/",
+      "pubDate": "Tue, 07 Jan 2025 23:11:34 +0000",
+      "matchedTopics": [
+        "0b9343e4-7137-43aa-8caf-018caa24e30e"
+      ],
+      "archived": false
+    },
+    {
+      "id": "c8079b57-0453-4701-b2cb-2ec2ccdad13c-https://www.foxnews.com/media/stelter-says-musk-demanding-fed-employees-list-accomplishments-sounds-like-common-sense-nonsense",
+      "feedId": "c8079b57-0453-4701-b2cb-2ec2ccdad13c",
+      "title": "Stelter says Musk demanding fed employees list accomplishments ‘sounds like common sense,’ but is ‘nonsense’",
+      "description": "CNN media correspondent Brian Stelter argued against Elon Musk’s demand that federal employees list things they have accomplished at work on CNN Monday.",
+      "link": "https://www.foxnews.com/media/stelter-says-musk-demanding-fed-employees-list-accomplishments-sounds-like-common-sense-nonsense",
+      "pubDate": "Mon, 24 Feb 2025 18:52:53 -0500",
+      "matchedTopics": [
+        "0b9343e4-7137-43aa-8caf-018caa24e30e"
+      ],
+      "archived": false
+    },
+    {
+      "id": "c8079b57-0453-4701-b2cb-2ec2ccdad13c-https://www.foxnews.com/politics/federal-agency-tells-staff-responses-musks-doge-productivity-email-may-read-malign-foreign-actors",
+      "feedId": "c8079b57-0453-4701-b2cb-2ec2ccdad13c",
+      "title": "Federal agency tells staff responses to Musk's DOGE productivity email may be read by 'malign foreign actors'",
+      "description": "HHS warned employees that if they respond to Elon Musk's request to list five things they accomplished last week to assume it would be read by malign foreign actors.",
+      "link": "https://www.foxnews.com/politics/federal-agency-tells-staff-responses-musks-doge-productivity-email-may-read-malign-foreign-actors",
+      "pubDate": "Mon, 24 Feb 2025 20:44:49 -0500",
+      "matchedTopics": [
+        "0b9343e4-7137-43aa-8caf-018caa24e30e"
+      ],
+      "archived": false
+    },
+    {
+      "id": "c8079b57-0453-4701-b2cb-2ec2ccdad13c-https://www.foxnews.com/politics/musk-offers-another-chance-respond-productivity-email-warns-failure-again-means-termination",
+      "feedId": "c8079b57-0453-4701-b2cb-2ec2ccdad13c",
+      "title": "Musk offers 'another chance' to respond to productivity email, but warns failure again means termination",
+      "description": "Elon Musk said federal employees who fail to respond to his productivity email will be given a another chance, but failure a second time means termination.",
+      "link": "https://www.foxnews.com/politics/musk-offers-another-chance-respond-productivity-email-warns-failure-again-means-termination",
+      "pubDate": "Mon, 24 Feb 2025 21:57:32 -0500",
+      "matchedTopics": [
+        "0b9343e4-7137-43aa-8caf-018caa24e30e"
+      ],
+      "archived": false
+    },
+    {
+      "id": "c8079b57-0453-4701-b2cb-2ec2ccdad13c-https://www.foxnews.com/politics/trump-musk-endorse-vivek-ramaswamy-ohio-governor",
+      "feedId": "c8079b57-0453-4701-b2cb-2ec2ccdad13c",
+      "title": "Trump, Musk endorse Vivek Ramaswamy for Ohio governor",
+      "description": "President Donald Trump and billionaire Elon Musk on Monday separately endorsed entrepreneur Vivek Ramaswamy in Ohio's 2026 gubernatorial race.",
+      "link": "https://www.foxnews.com/politics/trump-musk-endorse-vivek-ramaswamy-ohio-governor",
+      "pubDate": "Mon, 24 Feb 2025 22:31:06 -0500",
+      "matchedTopics": [
+        "0b9343e4-7137-43aa-8caf-018caa24e30e"
+      ],
+      "archived": false
+    }
+  ],
+  "archivedMatches": []
+}

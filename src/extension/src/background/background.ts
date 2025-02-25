@@ -1,6 +1,7 @@
-import { ExtensionMessage, RSSFeed, SearchTopic, FeedItem } from '../../../plugins/rss-monitor/types';
+import { RSSFeed, SearchTopic, FeedItem } from '../../../plugins/rss-monitor/types';
 
-// Store state
+const API_BASE = 'http://localhost:3000';
+
 interface ExtensionState {
   feeds: RSSFeed[];
   topics: SearchTopic[];
@@ -15,50 +16,37 @@ let state: ExtensionState = {
   isDocked: false
 };
 
+const CHECK_INTERVAL = 1000; // Check every second
+
 // Keep service worker alive
 chrome.runtime.onConnect.addListener(function(port) {
   port.onDisconnect.addListener(function() {
-    // Reconnect logic if needed
     console.log('Port disconnected, keeping service worker alive');
   });
 });
+
+let lastStateUpdate = 0;
 
 // Initialize state and start feed checking
 async function initialize() {
   console.group('Initializing Extension');
   try {
-    // Load initial state
-    const result = await chrome.storage.local.get(['feeds', 'topics', 'recentMatches', 'isDocked']);
-    state = {
-      feeds: result.feeds || [],
-      topics: result.topics || [],
-      recentMatches: result.recentMatches || [],
-      isDocked: result.isDocked || false
-    };
-    console.log('Initial state loaded:', state);
-
-    // Start feed checking
-    await setupFeedChecking();
-    
-    // Initial check
-    await checkAllFeeds();
+    // Load initial state from API
+    await refreshState();
   } catch (error) {
     console.error('Error during initialization:', error);
   }
   console.groupEnd();
 }
 
-// Initialize on install or update
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('Extension installed/updated');
-  initialize();
-});
-
-// Initialize on startup
-chrome.runtime.onStartup.addListener(() => {
-  console.log('Extension starting up');
-  initialize();
-});
+// Refresh state from API
+async function refreshState() {
+  try {
+    await refreshRSSData();
+  } catch (error) {
+    console.error('Error refreshing state:', error);
+  }
+}
 
 // Handle message passing errors
 function handleMessageError(error: any) {
@@ -72,87 +60,72 @@ function handleMessageError(error: any) {
 // Set up feed checking and alarms
 function setupFeedChecking() {
   console.group('Feed Checking Setup');
-  console.log('Setting up feed checking...');
-
-  // Clear any existing alarms
-  chrome.alarms.clearAll(() => {
-    console.log('Cleared existing alarms');
-    
-    // Create new alarm for periodic checking (0.167 minutes = 10 seconds)
-    chrome.alarms.create('checkFeeds', {
-      periodInMinutes: 0.167,
-      delayInMinutes: 0 // Start immediately
-    });
-    console.log('Created new alarm for feed checking (10-second interval)');
-
-    // Verify alarm was created
-    chrome.alarms.get('checkFeeds', (alarm) => {
-      if (alarm) {
-        console.log('Verified alarm creation:', alarm);
-      } else {
-        console.error('Failed to create alarm!');
-      }
-    });
+  
+  // Create alarm for periodic checking
+  chrome.alarms.create('checkFeeds', {
+    periodInMinutes: 0.167, // 10 seconds
+    delayInMinutes: 0
   });
 
   // Listen for alarm events
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'checkFeeds') {
-      console.group('Alarm Triggered Feed Check');
-      console.log('Alarm details:', alarm);
-      checkAllFeeds()
-        .then(matches => {
-          console.log('Feed check complete, matches found:', matches.length);
-          console.groupEnd();
-        })
-        .catch(error => {
-          console.error('Error in scheduled feed check:', error);
-          console.groupEnd();
-        });
+      checkFeeds();
     }
   });
 
-  // Initial check on startup
-  console.log('Performing initial feed check...');
-  checkAllFeeds()
-    .then(matches => {
-      console.log('Initial feed check complete, matches found:', matches.length);
-      console.groupEnd();
-    })
-    .catch(error => {
-      console.error('Error in initial feed check:', error);
-      console.groupEnd();
-    });
+  // Initial check
+  checkFeeds();
+  console.groupEnd();
 }
 
-// Save state to storage
-function saveState() {
-  chrome.storage.local.set(state);
+// Check feeds via API
+async function checkFeeds() {
+  try {
+    const response = await fetch(`${API_BASE}/rss/check`, {
+      method: 'POST'
+    });
+    
+    if (!response.ok) throw new Error('Failed to check feeds');
+    
+    const matches = await response.json();
+    if (matches.length > 0) {
+      notifyNewMatches(matches);
+      await refreshState(); // Refresh state to get latest data
+    }
+  } catch (error) {
+    console.error('Error checking feeds:', error);
+  }
 }
 
 // Show notifications for new matches
 function notifyNewMatches(matches: FeedItem[]) {
   matches.forEach(match => {
+    // Find the actual topic objects for this match
     const matchedTopics = state.topics
       .filter(t => match.matchedTopics.includes(t.id))
-      .map(t => t.query)
+      .map(t => t.query || 'Unknown Topic') // Use query field or fallback
       .join(', ');
+
+    console.log('Matched topics for notification:', {
+      matchIds: match.matchedTopics,
+      foundTopics: matchedTopics,
+      allTopics: state.topics
+    });
 
     chrome.notifications.create({
       type: 'basic',
       iconUrl: 'icons/icon128.png',
       title: 'New RSS Match Found!',
       message: `${match.title}\nMatched topics: ${matchedTopics}`,
-      buttons: [
-        { title: 'Open Article' }
-      ]
+      buttons: [{ title: 'Open Article' }]
     });
   });
 }
 
 // Handle notification clicks
 chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) => {
-  if (buttonIndex === 0) { // "Open Article" button
+  if (buttonIndex === 0) {
     const match = state.recentMatches.find(m => m.id === notificationId);
     if (match) {
       chrome.tabs.create({ url: match.link });
@@ -160,107 +133,145 @@ chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) =
   }
 });
 
+// Refresh all RSS data from API
+async function refreshRSSData() {
+  try {
+    // Fetch state directly
+    const stateResponse = await fetch(`${API_BASE}/rss-state`);
+    if (!stateResponse.ok) throw new Error('Failed to fetch state');
+    const stateData = await stateResponse.json();
+    
+    // Convert feeds object to array
+    state.feeds = stateData.feeds ? Object.values(stateData.feeds) : [];
+    console.log('Processed feeds:', state.feeds);
+
+    // Convert topics object to array
+    state.topics = stateData.topics ? Object.values(stateData.topics) : [];
+    console.log('Processed topics:', state.topics);
+
+    // Set recent matches
+    state.recentMatches = stateData.recentMatches || [];
+    console.log('Processed recent matches:', state.recentMatches);
+
+    // Notify UI of state change
+    const payload = {
+      ...state,
+      feeds: state.feeds,
+      topics: state.topics,
+      recentMatches: state.recentMatches
+    };
+    
+    chrome.runtime.sendMessage({ type: 'STATE_UPDATED', payload })
+      .catch(handleMessageError);
+
+    console.log('Refreshed RSS data:', { 
+      feeds: state.feeds.length, 
+      topics: state.topics.length,
+      recentMatches: state.recentMatches.length,
+      feedDetails: state.feeds.map(f => ({ id: f.id, name: f.name })),
+      topicDetails: state.topics.map(t => ({ id: t.id, query: t.query }))
+    });
+  } catch (error) {
+    console.error('Error refreshing RSS data:', error);
+  }
+}
+
 // Handle messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background received message:', message.type, message.payload);
   
-  try {
-    switch (message.type) {
-      case 'GET_STATE':
-        sendResponse(state);
-        break;
+  (async () => {
+    try {
+      switch (message.type) {
+        case 'GET_STATE':
+          await refreshRSSData();
+          sendResponse(state);
+          break;
 
-      case 'CHECK_FEEDS':
-        checkAllFeeds()
-          .then(() => sendResponse(state))
-          .catch((error) => {
-            console.error('Error checking feeds:', error);
-            sendResponse({ error: error.message });
+        case 'CHECK_FEEDS':
+          await checkFeeds();
+          await refreshRSSData();
+          sendResponse(state);
+          break;
+
+        case 'NEW_FEED':
+          await fetch(`${API_BASE}/rss/feeds`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(message.payload)
           });
-        break;
+          await refreshRSSData();
+          sendResponse(state);
+          break;
 
-      case 'NEW_FEED':
-        const feed = message.payload as RSSFeed;
-        state.feeds = [...state.feeds, feed];
-        saveState();
-        sendResponse(state);
-        // Notify other popup instances
-        chrome.runtime.sendMessage({ type: 'STATE_UPDATED', payload: state })
-          .catch(handleMessageError);
-        break;
-
-      case 'REMOVE_FEED':
-        const feedId = message.payload as string;
-        state.feeds = state.feeds.filter(f => f.id !== feedId);
-        saveState();
-        sendResponse(state);
-        // Notify other popup instances
-        chrome.runtime.sendMessage({ type: 'STATE_UPDATED', payload: state })
-          .catch(handleMessageError);
-        break;
-
-      case 'NEW_TOPIC':
-        const topic = message.payload as SearchTopic;
-        state.topics = [...state.topics, topic];
-        saveState();
-        // Check feeds immediately when a new topic is added
-        checkAllFeeds()
-          .then(() => sendResponse(state))
-          .catch((error) => {
-            console.error('Error checking feeds after new topic:', error);
-            sendResponse({ error: error.message });
+        case 'REMOVE_FEED':
+          await fetch(`${API_BASE}/rss/feeds/${message.payload}`, {
+            method: 'DELETE'
           });
-        // Notify other popup instances
-        chrome.runtime.sendMessage({ type: 'STATE_UPDATED', payload: state })
-          .catch(handleMessageError);
-        break;
+          await refreshRSSData();
+          sendResponse(state);
+          break;
 
-      case 'REMOVE_TOPIC':
-        const topicId = message.payload as string;
-        state.topics = state.topics.filter(t => t.id !== topicId);
-        saveState();
-        sendResponse(state);
-        // Notify other popup instances
-        chrome.runtime.sendMessage({ type: 'STATE_UPDATED', payload: state })
-          .catch(handleMessageError);
-        break;
+        case 'NEW_TOPIC':
+          await fetch(`${API_BASE}/rss/topics`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(message.payload)
+          });
+          await refreshRSSData();
+          sendResponse(state);
+          break;
 
-      case 'ARCHIVE_MATCH':
-        const matchId = message.payload as string;
-        const matchToArchive = state.recentMatches.find(m => m.id === matchId);
-        if (matchToArchive) {
-          matchToArchive.archived = true;
-          matchToArchive.removedAt = Date.now();
-          saveState();
-        }
-        sendResponse(state);
-        // Notify other popup instances
-        chrome.runtime.sendMessage({ type: 'STATE_UPDATED', payload: state })
-          .catch(handleMessageError);
-        break;
+        case 'REMOVE_TOPIC':
+          await fetch(`${API_BASE}/rss/topics/${message.payload}`, {
+            method: 'DELETE'
+          });
+          await refreshRSSData();
+          sendResponse(state);
+          break;
 
-      case 'RESTORE_MATCH':
-        const restoreId = message.payload as string;
-        const matchToRestore = state.recentMatches.find(m => m.id === restoreId);
-        if (matchToRestore) {
-          matchToRestore.archived = false;
-          matchToRestore.removedAt = undefined;
-          saveState();
-        }
-        sendResponse(state);
-        // Notify other popup instances
-        chrome.runtime.sendMessage({ type: 'STATE_UPDATED', payload: state })
-          .catch(handleMessageError);
-        break;
+        case 'ARCHIVE_MATCH':
+          const matchId = message.payload as string;
+          const matchToArchive = state.recentMatches.find(m => m.id === matchId);
+          if (matchToArchive) {
+            matchToArchive.archived = true;
+            matchToArchive.removedAt = Date.now();
+            await refreshRSSData();
+          }
+          sendResponse(state);
+          break;
+
+        case 'RESTORE_MATCH':
+          const restoreId = message.payload as string;
+          const matchToRestore = state.recentMatches.find(m => m.id === restoreId);
+          if (matchToRestore) {
+            matchToRestore.archived = false;
+            matchToRestore.removedAt = undefined;
+            await refreshRSSData();
+          }
+          sendResponse(state);
+          break;
+      }
+    } catch (error) {
+      console.error('Error handling message:', error);
+      sendResponse({ error: error instanceof Error ? error.message : 'Unknown error' });
     }
-  } catch (error) {
-    console.error('Error handling message:', error);
-    sendResponse({ error: error instanceof Error ? error.message : 'Unknown error' });
-  }
+  })();
 
-  // Return true if we're using sendResponse asynchronously
-  return true;
+  return true; // Will respond asynchronously
 });
+
+// Initialize on install or update
+chrome.runtime.onInstalled.addListener(initialize);
+
+// Initialize on startup
+chrome.runtime.onStartup.addListener(initialize);
+
+// Replace refreshState with refreshRSSData in periodic checks
+setInterval(refreshRSSData, CHECK_INTERVAL);
+
+// Initial refresh
+refreshRSSData();
 
 // Initialize side panel
 chrome.sidePanel
@@ -317,199 +328,4 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
       chrome.action.setPopup({ popup: 'popup.html' }); // Restore popup
     }
   }
-});
-
-// RSS Feed checking
-async function checkFeed(feed: RSSFeed): Promise<FeedItem[]> {
-  try {
-    console.group(`Feed Check: ${feed.name}`);
-    console.log('Feed URL:', feed.url);
-    
-    if (!feed.url) {
-      console.error('Feed URL is missing');
-      console.groupEnd();
-      return [];
-    }
-
-    // Format URL
-    let feedUrl = feed.url;
-    if (feedUrl.startsWith('@')) {
-      feedUrl = feedUrl.substring(1);
-      console.log('Removed @ from URL:', feedUrl);
-    }
-    if (!feedUrl.startsWith('http://') && !feedUrl.startsWith('https://')) {
-      feedUrl = 'https://' + feedUrl;
-      console.log('Final URL:', feedUrl);
-    }
-
-    console.log('\nActive Topics:');
-    state.topics.forEach(topic => {
-      console.log(`- Topic: "${topic.query}" (case sensitive: ${topic.caseSensitive})`);
-    });
-
-    if (state.topics.length === 0) {
-      console.warn('No search topics defined');
-      console.groupEnd();
-      return [];
-    }
-
-    console.log('\nFetching feed...');
-    const response = await fetch(feedUrl, {
-      headers: {
-        'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) RSS Reader',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
-      }
-    });
-
-    if (!response.ok) {
-      console.error('HTTP Error:', response.status, response.statusText);
-      console.error('Response headers:', Object.fromEntries(response.headers.entries()));
-      console.groupEnd();
-      return [];
-    }
-
-    const text = await response.text();
-    console.log('Feed content received, length:', text.length);
-
-    // Simple XML parsing using string manipulation
-    const items: Array<{title: string, link: string, description: string, pubDate: string}> = [];
-    const itemMatches = text.match(/<item[\s\S]*?<\/item>/g) || [];
-    
-    console.log(`Found ${itemMatches.length} items in feed`);
-
-    itemMatches.forEach(itemXml => {
-      const title = (itemXml.match(/<title>(.*?)<\/title>/s)?.[1] || '')
-        .replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1')
-        .trim();
-      
-      const link = (itemXml.match(/<link>(.*?)<\/link>/s)?.[1] || '')
-        .replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1')
-        .trim();
-      
-      const description = (
-        itemXml.match(/<description>(.*?)<\/description>/s)?.[1] ||
-        itemXml.match(/<content:encoded>(.*?)<\/content:encoded>/s)?.[1] ||
-        ''
-      )
-        .replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      const pubDate = (itemXml.match(/<pubDate>(.*?)<\/pubDate>/s)?.[1] || '')
-        .replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1')
-        .trim();
-
-      if (title && link) {
-        items.push({ title, link, description, pubDate });
-      }
-    });
-    
-    const matches: FeedItem[] = [];
-
-    for (const [index, item] of items.entries()) {
-      console.group(`Item ${index + 1}`);
-      console.log('Title:', item.title);
-      console.log('Link:', item.link);
-
-      const searchContent = `${item.title} ${item.description}`.toLowerCase();
-      console.log('Search content:', searchContent);
-      
-      const matchedTopics = state.topics.filter(topic => {
-        const searchTerm = topic.caseSensitive ? topic.query : topic.query.toLowerCase();
-        const contentToSearch = topic.caseSensitive ? `${item.title} ${item.description}` : searchContent;
-        
-        const isMatch = contentToSearch.includes(searchTerm);
-        console.log(`Checking "${topic.query}" - Match:`, isMatch);
-        return isMatch;
-      });
-
-      if (matchedTopics.length > 0) {
-        console.log('*** MATCH FOUND ***');
-        console.log('Matched topics:', matchedTopics.map(t => t.query));
-        
-        matches.push({
-          id: `${feed.id}-${Date.now()}-${index}`,
-          feedId: feed.id,
-          title: item.title,
-          description: item.description,
-          link: item.link,
-          pubDate: item.pubDate || new Date().toISOString(),
-          matchedTopics: matchedTopics.map(t => t.id),
-          archived: false
-        });
-      }
-      
-      console.groupEnd(); // Item group
-    }
-
-    console.log(`Found ${matches.length} matches in this feed`);
-    console.groupEnd(); // Feed check group
-    return matches;
-
-  } catch (error) {
-    console.error('Error checking feed:', error);
-    console.groupEnd(); // Feed check group
-    return [];
-  }
-}
-
-// Modify checkAllFeeds to handle duplicates and respect archived status
-async function checkAllFeeds() {
-  console.group('RSS Monitor - Feed Check');
-  console.log('=== Starting Feed Check ===');
-  console.log(`Number of feeds: ${state.feeds.length}`);
-  console.log(`Number of topics: ${state.topics.length}`);
-  console.log('\nFeeds:', state.feeds);
-  console.log('Topics:', state.topics);
-  
-  const allMatches: FeedItem[] = [];
-
-  for (const feed of state.feeds) {
-    console.group(`Checking feed: ${feed.name}`);
-    try {
-      const matches = await checkFeed(feed);
-      if (matches.length > 0) {
-        // Filter out duplicates and archived matches based on title and link
-        const newMatches = matches.filter(match => {
-          return !state.recentMatches.some(existing => 
-            (existing.title === match.title && 
-             existing.link === match.link) ||
-            // Check if this match was previously archived
-            (existing.archived && 
-             existing.removedAt && 
-             existing.title === match.title)
-          );
-        });
-
-        if (newMatches.length > 0) {
-          console.log(`Found ${newMatches.length} new matches in feed ${feed.name}`);
-          allMatches.push(...newMatches);
-        } else {
-          console.log('No new matches found in this feed');
-        }
-      } else {
-        console.log('No matches found in this feed');
-      }
-    } catch (error) {
-      console.error(`Error checking feed ${feed.name}:`, error);
-    }
-    console.groupEnd();
-  }
-
-  console.log(`\nTotal new matches found: ${allMatches.length}`);
-
-  if (allMatches.length > 0) {
-    console.log('Updating state with new matches');
-    state.recentMatches = [...allMatches, ...state.recentMatches].slice(0, 100);
-    saveState();
-    
-    notifyNewMatches(allMatches);
-    chrome.runtime.sendMessage({ type: 'STATE_UPDATED', payload: state });
-  }
-
-  console.groupEnd();
-  return allMatches;
-} 
+}); 
